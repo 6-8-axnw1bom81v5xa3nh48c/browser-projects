@@ -38,7 +38,7 @@ var O = {
         });
       });
     }else{
-      O.rf(`/projects/${O.project}.js`, (status, script) => {
+      O.rf(`/projects/${O.project}/main.js`, (status, script) => {
         if(status != 200) return O.error(`Failed to load script for project "${O.project}". Status code: ${status}.`);
         new Function('O', script)(O);
       });
@@ -60,7 +60,7 @@ var O = {
     Project function
   */
 
-  nonCapWords: 'a,an,the,at,by,for,in,of,on,to,up,and,as,but,or,nor'.split(','),
+  nonCapWords: 'a,an,and,as,at,but,by,for,in,nor,of,on,or,the,to,up'.split`,`,
   projectTest(project){
     return /^[a-z0-9]+(?:\-[a-z0-9]+)*$/.test(project);
   },
@@ -120,10 +120,14 @@ var O = {
 
     canvas.width = w;
     canvas.height = h;
+
     g.fillStyle = 'white';
     g.strokeStyle = 'black';
     g.fillRect(0, 0, w, h);
-    if(enhanced) g = new O.EnhancedRenderingContext(g);
+
+    if(enhanced){
+      g = new O.EnhancedRenderingContext(g);
+    }
 
     return {w, h, g};
   },
@@ -137,7 +141,7 @@ var O = {
     return `${url}${char}_=${Date.now()}`;
   },
   rf(file, cb){
-    var xhr = new XMLHttpRequest();
+    var xhr = new window.XMLHttpRequest();
     xhr.onreadystatechange = () => {
       if(xhr.readyState == 4){
         cb(xhr.status, xhr.responseText);
@@ -160,6 +164,7 @@ var O = {
       this.y = +y;
     }
   },
+
   Grid: class{
     constructor(w, h, func){
       var grid = O.ca(w, x => O.ca(h, y => new O.PathTile(func(x, y))));
@@ -174,6 +179,7 @@ var O = {
       for(y = 0; y < h; y++) for(x = 0; x < w; x++) func(x, y, this[x][y]);
     }
   },
+
   PathTile: class{
     constructor(wall){
       this.wall = wall;
@@ -184,6 +190,7 @@ var O = {
       this.dir = -1;
     }
   },
+
   TilesGrid: class{
     constructor(){
       this.w = 1;
@@ -214,6 +221,8 @@ var O = {
     setWH(w, h){
       this.w = w;
       this.h = h;
+      this.wh = w / 2;
+      this.hh = h / 2;
       this.resize();
     }
 
@@ -238,8 +247,12 @@ var O = {
 
       this.iw = iw;
       this.ih = ih;
+      this.iwh = iw / 2;
+      this.ihh = ih / 2;
 
-      var canvas = this.g.g.canvas;
+      var g = this.g.g;
+      var canvas = g.canvas;
+
       canvas.width = iw;
       canvas.height = ih;
     }
@@ -279,7 +292,9 @@ var O = {
       g.fillStyle = 'darkgray';
       g.fillRect(0, 0, this.iw, this.ih);
 
-      g.translate(this.iw - this.w * this. s >> 1, this.ih - this.h * this. s >> 1);
+      var tx = this.iw - this.w * this.s >> 1;
+      var ty = this.ih - this.h * this.s >> 1;
+      g.translate(Math.max(tx, 0), Math.max(ty, 0));
       g.scale(this.s);
 
       g.fillStyle = 'white';
@@ -287,7 +302,7 @@ var O = {
 
       g.textAlign = 'center';
       g.textBaseline = 'middle';
-      g.font(this.s * .9);
+      g.font(this.s * .8);
     }
 
     draw(){
@@ -300,35 +315,38 @@ var O = {
 
     drawFrame(x, y, func = null){
       var g = this.g;
+      var s1 = 1 / this.s + 1;
 
       if(func === null){
+        g.beginPath();
         g.rect(x, y, 1, 1);
+        g.stroke();
       }else{
-        this.adjacent(x, y, (d1, dir) => {
+        this.adjacent(x, y, (px, py, d1, dir) => {
           if(func(d1, dir)){
             switch(dir){
               case 0:
                 g.beginPath();
                 g.moveTo(x, y);
-                g.lineTo(x + 1, y);
+                g.lineTo(x + s1, y);
                 g.stroke();
                 break;
               case 1:
                 g.beginPath();
                 g.moveTo(x, y);
-                g.lineTo(x, y + 1);
+                g.lineTo(x, y + s1);
                 g.stroke();
                 break;
               case 2:
                 g.beginPath();
                 g.moveTo(x, y + 1);
-                g.lineTo(x + 1, y + 1);
+                g.lineTo(x + s1, y + 1);
                 g.stroke();
                 break;
               case 3:
                 g.beginPath();
                 g.moveTo(x + 1, y);
-                g.lineTo(x + 1, y + 1);
+                g.lineTo(x + 1, y + s1);
                 g.stroke();
                 break;
             }
@@ -344,12 +362,13 @@ var O = {
     }
 
     adjacent(x, y, func){
-      func(this.get(x, y - 1), 0);
-      func(this.get(x - 1, y), 1);
-      func(this.get(x, y + 1), 2);
-      func(this.get(x + 1, y), 3);
+      func(x, y - 1, this.get(x, y - 1), 0);
+      func(x - 1, y, this.get(x - 1, y), 1);
+      func(x, y + 1, this.get(x, y + 1), 2);
+      func(x + 1, y, this.get(x + 1, y), 3);
     }
   },
+
   EnhancedRenderingContext: class{
     constructor(g){
       this.g = g;
@@ -367,18 +386,26 @@ var O = {
       this.fontSize = 32;
       this.fontScale = 1;
 
+      this.pointsQueue = [];
+      this.arcsQueue = [];
+
       [
-        'fillStyle', 'strokeStyle', 'textAlign', 'textBaseline',
-        'lineWidth'
+        'fillStyle',
+        'strokeStyle',
+        'textAlign',
+        'textBaseline',
+        'lineWidth',
+        'globalCompositeOperation',
       ].forEach(prop => {
         Object.defineProperty(this, prop, {
-          set: val => g[prop] = val
+          set: val => g[prop] = val,
+          get: () => g[prop],
         });
       });
 
       [
-        'beginPath', 'closePath', 'clearRect', 'fill',
-        'stroke', 'measureText'
+        'clearRect',
+        'measureText',
       ].forEach(prop => this[prop] = g[prop].bind(g));
 
       this.fillStyle = 'white';
@@ -386,18 +413,94 @@ var O = {
       this.textAlign = 'center';
       this.textBaseline = 'middle';
     }
+
+    beginPath(){
+      this.pointsQueue.length = 0;
+      this.arcsQueue.length = 0;
+    }
+
+    closePath(){
+      var q = this.pointsQueue;
+      q.push(1, q[1], q[2]);
+    }
+
+    fill(){
+      this.finishLine(true);
+      this.g.fill();
+    }
+
+    stroke(){
+      this.finishLine(false);
+      this.g.stroke();
+    }
+
+    finishLine(fillMode){
+      var g = this.g;
+      var q = this.pointsQueue;
+      var aq = this.arcsQueue;
+
+      var x1 = q[1];
+      var y1 = q[2];
+
+      var i = 0;
+      var j = 0;
+
+      g.beginPath();
+
+      do{
+        while(j < aq.length && aq[j] == i){
+          g.arc(aq[1], aq[2], aq[3], aq[4], aq[5], aq[6]);
+          j += 7;
+        }
+
+        i += 3;
+
+        var type = q[i];
+
+        var x2 = q[i + 1];
+        var y2 = q[i + 2];
+
+        if(fillMode){
+          if(Math.abs(x1 - x2) == 1) x2 = x1;
+          if(Math.abs(y1 - y2) == 1) y2 = y1;
+        }
+
+        if(!type){
+          x1 = x2;
+          y1 = y2;
+          continue;
+        }
+
+        if(fillMode){
+          g.lineTo(x2, y2);
+        }else{
+          var dx = y1 != y2 ? .5 : 0;
+          var dy = x1 != x2 ? .5 : 0;
+
+          g.moveTo(x1 + dx, y1 + dy);
+          g.lineTo(x2 + dx, y2 + dy);
+        }
+
+        x1 = x2;
+        y1 = y2;
+      }while(i < q.length);
+    }
+
     resetTransform(){
       this.s = 1;
       this.tx = 0;
       this.ty = 0;
     }
+
     scale(s){
       this.s *= s;
     }
+
     translate(x, y){
       this.tx += this.s * x;
       this.ty += this.s * y;
     }
+
     rotate(x, y, angle){
       this.rot = angle;
 
@@ -408,13 +511,23 @@ var O = {
         this.rsin = -Math.sin(angle);
       }
     }
+
     rect(x, y, w, h){
+      var s1 = 1 / this.s;
+
       this.moveTo(x, y);
-      this.lineTo(x + w, y);
-      this.lineTo(x + w, y + h);
+      this.lineTo(x + w + s1, y);
+
+      this.moveTo(x + w, y);
+      this.lineTo(x + w, y + h + s1);
+
+      this.moveTo(x + w + s1, y + h);
       this.lineTo(x, y + h);
-      this.closePath();
+
+      this.moveTo(x, y + h + s1);
+      this.lineTo(x, y);
     }
+
     fillRect(x, y, w, h){
       if(this.rot){
         this.g.beginPath();
@@ -423,8 +536,9 @@ var O = {
         return;
       }
 
-      this.g.fillRect(x * this.s + this.tx | 0, y * this.s + this.ty | 0, w * this.s | 0, h * this.s | 0);
+      this.g.fillRect(Math.round(x * this.s + this.tx), Math.round(y * this.s + this.ty), Math.round(w * this.s) | 0, Math.round(h * this.s) | 0);
     }
+
     moveTo(x, y){
       if(this.rot){
         var xx = x - this.rtx;
@@ -434,8 +548,9 @@ var O = {
         y = this.rty + yy * this.rcos + xx * this.rsin;
       }
 
-      this.g.moveTo((x * this.s + this.tx | 0) - .5, (y * this.s + this.ty | 0) - .5);
+      this.pointsQueue.push(0, Math.round(x * this.s + this.tx), Math.round(y * this.s + this.ty));
     }
+
     lineTo(x, y){
       if(this.rot){
         var xx = x - this.rtx;
@@ -445,8 +560,9 @@ var O = {
         y = this.rty + yy * this.rcos + xx * this.rsin;
       }
 
-      this.g.lineTo((x * this.s + this.tx | 0) - .5, (y * this.s + this.ty | 0) - .5);
+      this.pointsQueue.push(1, Math.round(x * this.s + this.tx), Math.round(y * this.s + this.ty));
     }
+
     arc(x, y, r, a1, a2, acw){
       if(this.rot){
         var xx = x - this.rtx;
@@ -459,8 +575,9 @@ var O = {
         a2 = (a2 - this.rot) % O.pi2;
       }
 
-      this.g.arc(x * this.s + this.tx - 1, y * this.s + this.ty - 1, r * this.s, a1, a2, acw);
+      this.arcsQueue.push(this.pointsQueue.length, x * this.s + this.tx + .5, y * this.s + this.ty + .5, r * this.s, a1, a2, acw);
     }
+
     fillText(text, x, y){
       if(this.rot){
         var xx = x - this.rtx;
@@ -470,20 +587,24 @@ var O = {
         y = this.rty + yy * this.rcos + xx * this.rsin;
       }
 
-      this.g.fillText(text, x * this.s + this.tx | 0, y * this.s + this.ty | 0);
+      this.g.fillText(text, Math.round(x * this.s + this.tx), Math.round(y * this.s + this.ty));
     }
+
     updateFont(){
       this.g.font = `${this.fontSize * this.fontScale}px arial`;
     }
+
     font(size){
       this.fontSize = size;
       this.updateFont();
     }
+
     scaleFont(scale){
       this.fontScale = scale;
       this.updateFont();
     }
   },
+
   BitStream: class{
     constructor(arr = null, checksum = false){
       this.arr = new Uint8Array(0);

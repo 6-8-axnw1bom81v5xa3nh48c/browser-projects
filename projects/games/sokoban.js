@@ -31,7 +31,7 @@ game.setGenFunc(() => {
   game.get(x, y).player = 1;
 
   game.iterate((x, y, d) => {
-    d.box = ~~!O.rand(8);
+    d.box = !(d.player || O.rand(8)) | 0;
     d.boxPrev = d.box;
   });
 
@@ -57,6 +57,11 @@ game.setGenFunc(() => {
       d.wall = 1;
     }
   });
+
+  game.get(player.x, player.y).player = 0;
+  player.x = x;
+  player.y = y;
+  game.get(x, y).player = 1;
 });
 
 game.setDrawFunc((x, y, d, g) => {
@@ -195,7 +200,7 @@ function updatePlacedNum(diff){
   placedNum += diff;
 
   if(placedNum == boxesNum){
-    setTimeout(game.onSolved.bind(game));
+    window.setTimeout(game.onSolved.bind(game));
   }
 }
 

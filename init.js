@@ -6,7 +6,7 @@
       doc: document,
       body: document.body,
       init(){
-        O.rf('framework.js', (status, script) => {
+        O.rf('/framework.js', (status, script) => {
           if(status != 200) return O.fatalError('Cannot load framework script. Try clearing cache or restarting your browser.');
           new Function(script)();
         });
@@ -24,7 +24,7 @@
         return `${url}${char}_=${Date.now()}`;
       },
       rf(file, cb){
-        var xhr = new XMLHttpRequest();
+        var xhr = new window.XMLHttpRequest();
         xhr.onreadystatechange = () => {
           if(xhr.readyState == 4){
             cb(xhr.status, xhr.responseText);
