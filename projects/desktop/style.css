@@ -1,0 +1,13 @@
+body{
+  overflow: hidden;
+}
+
+.window{
+  display: block;
+  position: absolute;
+}
+
+.canvas{
+  display: block;
+  position: absolute;
+}

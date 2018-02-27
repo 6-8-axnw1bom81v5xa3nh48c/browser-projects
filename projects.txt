@@ -3,3 +3,5 @@ video
 land-explorer
 games
 grid
+encrypted
+desktop

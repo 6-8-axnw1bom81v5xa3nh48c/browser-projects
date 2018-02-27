@@ -44,12 +44,17 @@ var O = {
       });
     }
   },
+
   title(title){
     O.body.innerHTML = '';
     var h1 = O.ce(O.body, 'h1');
     O.ceText(h1, title);
   },
+
   error(msg){
+    O.body.classList.remove('has-canvas');
+    O.body.style.backgroundColor = '#ffffff';
+
     O.title('Error Occured');
     O.ceText(O.body, msg);
     O.ceBr(O.body, 2);
@@ -61,9 +66,11 @@ var O = {
   */
 
   nonCapWords: 'a,an,and,as,at,but,by,for,in,nor,of,on,or,the,to,up'.split`,`,
+
   projectTest(project){
     return /^[a-z0-9]+(?:\-[a-z0-9]+)*$/.test(project);
   },
+
   projectToName(project){
     return project.replace(/\-/g, ' ').replace(/[a-z0-9]+/g, word => {
       if(O.nonCapWords.indexOf(word) == -1) return word[0].toUpperCase() + word.substring(1);
@@ -94,14 +101,17 @@ var O = {
     parent.appendChild(elem);
     return elem;
   },
+
   ceBr(elem, num = 1){
     while(num--) O.ce(elem, 'br');
   },
+
   ceText(elem, text){
     var t = document.createTextNode(text);
     elem.appendChild(t);
     return t;
   },
+
   ceLink(elem, text, href){
     var a = O.ce(elem, 'a');
     
@@ -110,8 +120,9 @@ var O = {
 
     return a;
   },
+
   ceCanvas(enhanced = false){
-    O.body.style.margin = '0px';
+    O.body.classList.add('has-canvas');
 
     var w = window.innerWidth;
     var h = window.innerHeight;
@@ -140,18 +151,55 @@ var O = {
     var char = url.indexOf('?') != -1 ? '&' : '?';
     return `${url}${char}_=${Date.now()}`;
   },
-  rf(file, cb){
+
+  rf(file, isBinary, cb = null){
+    if(cb === null){
+      cb = isBinary;
+      isBinary = false;
+    }
+
     var xhr = new window.XMLHttpRequest();
+
+    if(isBinary){
+      xhr.responseType = 'arraybuffer';
+    }
+
     xhr.onreadystatechange = () => {
       if(xhr.readyState == 4){
-        cb(xhr.status, xhr.responseText);
+        if(isBinary){
+          cb(xhr.status, new O.Buffer(xhr.response));
+        }else{
+          cb(xhr.status, xhr.responseText);
+        }
       }
     };
+
     xhr.open('GET', O.urlTime(file));
-    xhr.send();
+    xhr.send(null);
   },
-  rfLocal(file, cb){
-    O.rf(`/projects/${O.project}/${file}`, cb);
+
+  rfLocal(file, isBinary, cb = null){
+    if(cb === null){
+      cb = isBinary;
+      isBinary = false;
+    }
+
+    O.rf(`/projects/${O.project}/${file}`, isBinary, cb);
+  },
+
+  require(project, cb = O.nop){
+    O.rf(`/projects/${project}/index.js`, false, (status, data) => {
+      if(status !== 200) return O.error('Cannot load project.');
+
+      var module = {
+        exports: {}
+      };
+
+      var func = new Function('O', 'module', data);
+      func(O, module);
+
+      cb(module.exports);
+    });
   },
 
   /*
@@ -372,6 +420,7 @@ var O = {
   EnhancedRenderingContext: class{
     constructor(g){
       this.g = g;
+      this.canvas = g.canvas;
 
       this.s = 1;
       this.tx = 0;
@@ -385,6 +434,7 @@ var O = {
 
       this.fontSize = 32;
       this.fontScale = 1;
+      this.fontModifiers = '';
 
       this.pointsQueue = [];
       this.arcsQueue = [];
@@ -412,6 +462,19 @@ var O = {
       this.strokeStyle = 'black';
       this.textAlign = 'center';
       this.textBaseline = 'middle';
+
+      this.clearCanvas();
+    }
+
+    clearCanvas(col = null){
+      if(col !== null) this.fillStyle = col;
+      
+      this.resetTransform();
+      this.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    }
+
+    createLinearGradient(...params){
+      return this.g.createLinearGradient(...params);
     }
 
     beginPath(){
@@ -449,7 +512,7 @@ var O = {
 
       do{
         while(j < aq.length && aq[j] == i){
-          g.arc(aq[1], aq[2], aq[3], aq[4], aq[5], aq[6]);
+          g.arc(aq[j + 1], aq[j + 2], aq[j + 3], aq[j + 4], aq[j + 5], aq[j + 6]);
           j += 7;
         }
 
@@ -590,8 +653,23 @@ var O = {
       this.g.fillText(text, Math.round(x * this.s + this.tx), Math.round(y * this.s + this.ty));
     }
 
+    strokeText(text, x, y){
+      if(this.rot){
+        var xx = x - this.rtx;
+        var yy = y - this.rty;
+
+        x = this.rtx + xx * this.rcos - yy * this.rsin;
+        y = this.rty + yy * this.rcos + xx * this.rsin;
+      }
+
+      this.g.strokeText(text, Math.round(x * this.s + this.tx), Math.round(y * this.s + this.ty));
+    }
+
     updateFont(){
-      this.g.font = `${this.fontSize * this.fontScale}px arial`;
+      var modifiers = this.fontModifiers;
+      var strDelimiter = modifiers.length !== 0 ? ' ' : '';
+
+      this.g.font = `${modifiers}${strDelimiter}${this.fontSize * this.fontScale}px arial`;
     }
 
     font(size){
@@ -601,6 +679,16 @@ var O = {
 
     scaleFont(scale){
       this.fontScale = scale;
+      this.updateFont();
+    }
+
+    setFontModifiers(modifiers){
+      this.fontModifiers = modifiers;
+      this.updateFont();
+    }
+
+    removeFontModifiers(){
+      this.fontModifiers = '';
       this.updateFont();
     }
   },
@@ -772,6 +860,70 @@ var O = {
       }).join``;
     }
   },
+  Buffer: class extends Uint8Array{
+    constructor(...params){
+      if(params.length === 1 && typeof params[0] === 'string'){
+        params[0] = [...params[0]].map(a => a.charCodeAt(0));
+      }
+
+      super(...params);
+    }
+
+    static alloc(size){
+      return new O.Buffer(size);
+    }
+
+    static from(arr){
+      return new O.Buffer(arr);
+    }
+
+    static concat(arr){
+      arr = arr.reduce((concatenated, buff) => {
+        return [...concatenated, ...buff];
+      }, []);
+
+      return new O.Buffer(arr);
+    }
+
+    toString(type){
+      var arr = [...this];
+
+      switch(type){
+        case 'hex':
+          return arr.map(a => a.toString(16).padStart(2, '0')).join``;
+          break;
+
+        default:
+          return arr.map(a => String.fromCharCode(a)).join``;
+          break;
+      }
+    }
+
+    readUInt32BE(offset){
+      var val;
+
+      val = this[offset] * 2 ** 24;
+      val += this[offset + 1] * 2 ** 16;
+      val += this[offset + 2] * 2 ** 8;
+      val += this[offset + 3];
+
+      return val;
+    }
+
+    writeUInt32BE(val, offset){
+      this[offset] = val / 2 ** 24;
+      this[offset + 1] = val / 2 ** 16;
+      this[offset + 2] = val / 2 ** 8;
+      this[offset + 3] = val;
+    }
+
+    writeInt32BE(val, offset){
+      this[offset] = val >> 24;
+      this[offset + 1] = val >> 16;
+      this[offset + 2] = val >> 8;
+      this[offset + 3] = val;
+    }
+  },
 
   /*
     String functions
@@ -836,6 +988,24 @@ var O = {
   },
   binLen(a){
     return a && (Math.log2(a) | 0) + 1;
+  },
+  raf(func){
+    return window.requestAnimationFrame(func);
+  },
+
+  /*
+    Events
+  */
+
+  ael(type, func){
+    return window.addEventListener(type, func);
+  },
+  rel(type, func){
+    return window.removeEventListener(type, func);
+  },
+  pd(evt, stopPropagation = false){
+    evt.preventDefault();
+    if(stopPropagation) evt.stopPropagation();
   },
 
   /*
@@ -906,53 +1076,6 @@ var O = {
   },
   sha256: (() => {
     var MAX_UINT = 2 ** 32;
-
-    class Buffer extends Uint8Array{
-      constructor(...params){
-        super(...params);
-      }
-
-      static alloc(size){
-        return new Buffer(size);
-      }
-
-      static from(arr){
-        return new Buffer(arr);
-      }
-
-      static concat(arr){
-        arr = arr.reduce((concatenated, buff) => {
-          return [...concatenated, ...buff];
-        }, []);
-
-        return new Buffer(arr);
-      }
-
-      readUInt32BE(offset){
-        var value;
-
-        value = this[offset] * 2 ** 24;
-        value += this[offset + 1] * 2 ** 16;
-        value += this[offset + 2] * 2 ** 8;
-        value += this[offset + 3];
-
-        return value;
-      }
-
-      writeUInt32BE(value, offset){
-        this[offset] = value / 2 ** 24;
-        this[offset + 1] = value / 2 ** 16;
-        this[offset + 2] = value / 2 ** 8;
-        this[offset + 3] = value;
-      }
-
-      writeInt32BE(value, offset){
-        this[offset] = value >> 24;
-        this[offset + 1] = value >> 16;
-        this[offset + 2] = value >> 8;
-        this[offset + 3] = value;
-      }
-    };
 
     return sha256;
 
@@ -1031,7 +1154,7 @@ var O = {
 
       bits += '1' + '0'.repeat(k);
 
-      var buffL = Buffer.alloc(8);
+      var buffL = O.Buffer.alloc(8);
       buffL.writeUInt32BE(len / MAX_UINT, 0);
       buffL.writeUInt32BE(len % MAX_UINT, 4);
 
@@ -1051,8 +1174,8 @@ var O = {
     }
 
     function computeDigest(a){
-      return Buffer.concat([...a].map(a => {
-        var buff = Buffer.alloc(4);
+      return O.Buffer.concat([...a].map(a => {
+        var buff = O.Buffer.alloc(4);
         buff.writeUInt32BE(a, 0);
         return buff;
       }));
@@ -1082,7 +1205,7 @@ var O = {
     }
 
     function toUint32(a){
-      var buff = Buffer.alloc(4);
+      var buff = O.Buffer.alloc(4);
       buff.writeInt32BE(a | 0, 0);
       return buff.readUInt32BE(0);
     }
@@ -1115,7 +1238,7 @@ var O = {
     }
 
     function bitsToBuff(bits){
-      return Buffer.from((bits.match(/\d{8}/g) || []).map(a => {
+      return O.Buffer.from((bits.match(/\d{8}/g) || []).map(a => {
         return parseInt(a, 2);
       }));
     }
